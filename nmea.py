@@ -45,6 +45,7 @@ L1=(args.L1Olat, args.L1Olon), (args.L11lat, args.L11lon)
 previous_line=None
 p0=None
 times=[]
+hours=[]
 file = args.source_file
 for line in file.readlines():
     msg = pynmea2.parse(line)
@@ -58,12 +59,13 @@ for line in file.readlines():
     a=ise_point(prmsg,msg,L1)
     if a and p0:
         times.append(a-p0)
+        hours.append(a)
         p0=None
     b=ise_point(prmsg,msg,L0)
     if b: 
         p0=b
 
 for i,a in enumerate(times):
-    print (i+1, a)
-print ("min:", times.index(min(times))+1, min(times))
-print ("max:", times.index(max(times))+1, max(times))
+    print (i, a, hours[i])
+print ("min:", times.index(min(times)), min(times), hours[times.index(min(times))])
+print ("max:", times.index(max(times)), max(times))
