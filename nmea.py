@@ -2,7 +2,8 @@
 
 import argparse
 import pynmea2
-from datetime import datetime, date
+import json
+from datetime import datetime, date, timedelta
 
 def intersect(p1, p2, p3, p4):
     x1,y1 = p1
@@ -21,32 +22,29 @@ def intersect(p1, p2, p3, p4):
     return ua
 
 def ise_point(prmsg, msg, l):
-    ise = intersect((prmsg.latitude,prmsg.longitude), (msg.latitude,msg.longitude), l[0],l[1])
+    ise = intersect((prmsg.latitude,prmsg.longitude), (msg.latitude,msg.longitude), (l[0],l[1]), (l[2],l[3]))
     if ise:
         duration = datetime.combine(date.min, msg.timestamp) - datetime.combine(date.min, prmsg.timestamp)
         shift = duration*ise
         return datetime.combine(date.min, prmsg.timestamp) + shift
 
-
+def previous_name(name, config):
+    if name==config["order"][0]:
+        return config["order"][-1]
+    else:
+        return config["order"][config["order"].index(name)-1]
+    
 
 parser = argparse.ArgumentParser(description='Script which calucates time between two lines based on NMEA data. There can be multiple intersepcions in one file. Need pynmea2 python library to work. Can be used as post-processing timer for race track. You can check time or whole lap or only specific parts of the track. Script shows the stats')
 parser.add_argument('source_file', type=open, help="Source file where are NMEA data(from gps). Need to have there $GPRMC lines")
-parser.add_argument('LOOlat', type=float, help="First line (start) first point latitiude")
-parser.add_argument('LOOlon', type=float, help="First line (start) first point longitude")
-parser.add_argument('LO1lat', type=float, help="First line (start) second point latitiude")
-parser.add_argument('LO1lon', type=float, help="First line (start) second point longitude")
-parser.add_argument('L1Olat', type=float, help="Second line (finish) first point latitiude")
-parser.add_argument('L1Olon', type=float, help="Second line (finish) first point longitude")
-parser.add_argument('L11lat', type=float, help="Second line (finish) second point latitiude")
-parser.add_argument('L11lon', type=float, help="Second line (finish) second point longitude")
+parser.add_argument('track_file', type=open, help="json file with track")
 args = parser.parse_args()
-L0=(args.LOOlat, args.LOOlon), (args.LO1lat, args.LO1lon)
-L1=(args.L1Olat, args.L1Olon), (args.L11lat, args.L11lon)
+config = json.load(args.track_file)
 previous_line=None
 p0=None
-times=[]
-hours=[]
+ises=[]
 file = args.source_file
+print("checking intersections...")
 for line in file.readlines():
     msg = pynmea2.parse(line)
     if msg.sentence_type != "RMC":
@@ -56,7 +54,33 @@ for line in file.readlines():
         continue
     prmsg=pynmea2.parse(previous_line)
     previous_line=line
-    a=ise_point(prmsg,msg,L1)
+    for order in config["order"]:
+        Lx=config["line_positions"][order]
+        a=ise_point(prmsg,msg,Lx)
+        if a:
+            ises.append({"name": order, "time": a})
+print("ise read complete. Calculating times...")
+times=[]
+for i, ise in enumerate(ises):
+    if i==0:
+        continue
+    if previous_name(ise["name"],config) == ises[i-1]["name"]:
+        times.append({"name": ise["name"], "UTC": ise["time"], "delta": ise["time"]-ises[i-1]["time"]})
+    else:
+        print("invalid", ise["name"], ise["time"])
+
+best={}
+teoretical_best=timedelta(0)
+for name in config["order"]:
+    for time in times:
+        if time["name"]==name:
+            if not best.get(name, None) or best[name]["delta"]>time["delta"]:
+                best[name]={"name": name, "UTC": time["UTC"], "delta": time["delta"]}
+    print(best[name]["name"], best[name]["UTC"], best[name]["delta"])
+    teoretical_best+=best[name]["delta"]
+
+print("teoretical best", teoretical_best)
+'''
     if a and p0:
         times.append(a-p0)
         hours.append(a)
@@ -69,3 +93,5 @@ for i,a in enumerate(times):
     print (i, a, hours[i])
 print ("min:", times.index(min(times)), min(times), hours[times.index(min(times))])
 print ("max:", times.index(max(times)), max(times))
+
+'''
